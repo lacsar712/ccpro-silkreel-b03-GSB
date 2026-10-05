@@ -64,7 +64,7 @@ function Yard() {
 
   if (!board) {
     return (
-      <div class="yard">
+      <div>
         {err || "装载环盆…"}
       </div>
     );
@@ -99,21 +99,8 @@ function Yard() {
   }
 
   return (
-    <div class="yard">
-      <div class="topbar">
-        <div>
-          <h1>{board.filature}</h1>
-          <p>{board.riverside} · 点盆登记汤温；已缫完须最近汤温 38～42℃</p>
-        </div>
-        <button
-          onClick={() => {
-            clearToken();
-            location.reload();
-          }}
-        >
-          退出
-        </button>
-      </div>
+    <div>
+      <p class="hint">{board.riverside} · 点盆登记汤温；已缫完须最近汤温 38～42℃；拨回浸茧须汤已放完</p>
       <div class="ring">
         {board.basins.map((b, i) => {
           const angle = (Math.PI * 2 * i) / n - Math.PI / 2;
@@ -138,6 +125,13 @@ function Yard() {
             {picked.code} · {STATUS_LABEL[picked.status]}
           </h3>
           <p>最近汤温：{picked.latestTempC ?? "无"} ℃ · 记录 {picked.readingCount} 次</p>
+          {picked.status === "reeled" && (
+            <p class="hint">
+              {picked.soupDrained
+                ? "汤已放完，可拨回浸茧。"
+                : "汤未放完：须由管理员在「放汤勾」页勾选后，才能拨回浸茧。"}
+            </p>
+          )}
           <input value={temp} onInput={(e) => setTemp(e.target.value)} />
           <button onClick={writeTemp}>登记汤温</button>
           <div>
@@ -152,9 +146,105 @@ function Yard() {
   );
 }
 
+function DrainPage({ me }) {
+  const [board, setBoard] = useState(null);
+  const [err, setErr] = useState("");
+  const isAdmin = me?.role === "admin";
+
+  async function refresh() {
+    const data = await api("/api/board");
+    setBoard(data);
+  }
+
+  useEffect(() => {
+    refresh().catch((e) => setErr(e.message));
+  }, []);
+
+  async function toggle(basin, drained) {
+    setErr("");
+    try {
+      await api(`/api/basins/${basin.id}/drain`, {
+        method: "POST",
+        body: JSON.stringify({ soupDrained: drained }),
+      });
+      await refresh();
+    } catch (ex) {
+      setErr(ex.message);
+      refresh().catch(() => {});
+    }
+  }
+
+  if (!board) {
+    return <div>{err || "装载放汤勾…"}</div>;
+  }
+
+  return (
+    <div class="drain">
+      <p class="hint">
+        已缫完的盆拨回浸茧前，须在此勾选「汤已放完」；勾选只记放汤，不会拨动盆态。
+        {isAdmin ? "你是管理员，可勾。" : "缫丝工只能查看，要勾找管理员。"}
+      </p>
+      {board.basins.map((b) => (
+        <label key={b.id} class={`drain-row ${b.status}`}>
+          <input
+            type="checkbox"
+            checked={b.soupDrained}
+            disabled={!isAdmin}
+            onChange={(e) => toggle(b, e.target.checked)}
+          />
+          <strong>{b.code}</strong>
+          <span>{STATUS_LABEL[b.status]}</span>
+          <span class="drain-state">{b.soupDrained ? "汤已放完" : "汤未放完"}</span>
+        </label>
+      ))}
+      {err && <p class="err">{err}</p>}
+    </div>
+  );
+}
+
 function App() {
   const [ready, setReady] = useState(Boolean(token()));
-  return ready ? <Yard /> : <Login onOk={() => setReady(true)} />;
+  const [me, setMe] = useState(null);
+  const [view, setView] = useState("ring");
+
+  useEffect(() => {
+    if (!ready) return;
+    api("/api/auth/me")
+      .then(setMe)
+      .catch(() => {
+        clearToken();
+        setReady(false);
+      });
+  }, [ready]);
+
+  if (!ready) {
+    return <Login onOk={() => setReady(true)} />;
+  }
+
+  return (
+    <div class="yard">
+      <div class="topbar">
+        <h1>江口缫丝坞</h1>
+        <nav>
+          <button class={view === "ring" ? "on" : ""} onClick={() => setView("ring")}>
+            环盆作业台
+          </button>
+          <button class={view === "drain" ? "on" : ""} onClick={() => setView("drain")}>
+            放汤勾
+          </button>
+          <button
+            onClick={() => {
+              clearToken();
+              location.reload();
+            }}
+          >
+            退出
+          </button>
+        </nav>
+      </div>
+      {view === "ring" ? <Yard /> : <DrainPage me={me} />}
+    </div>
+  );
 }
 
 render(<App />, document.getElementById("app"));

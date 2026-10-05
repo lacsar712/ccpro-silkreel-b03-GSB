@@ -36,6 +36,15 @@ def require_user():
     return None
 
 
+def require_admin():
+    denied = require_user()
+    if denied:
+        return denied
+    if g.user.role != "admin":
+        return jsonify({"detail": "只有管理员能勾放汤"}), 403
+    return None
+
+
 @app.route("/api/health")
 async def health():
     return {"status": "ok", "service": "SilkReel"}
@@ -69,6 +78,7 @@ def _basin_json(basin: Basin) -> dict:
         "id": basin.id,
         "code": basin.code,
         "status": basin.status,
+        "soupDrained": basin.soup_drained,
         "ringIndex": basin.ring_index,
         "latestTempC": latest_temp(basin),
         "readingCount": len(basin.readings or []),
@@ -112,6 +122,25 @@ async def add_reading(basin_id: int):
         return _basin_json(basin)
 
 
+@app.route("/api/basins/<int:basin_id>/drain", methods=["POST"])
+async def set_drain(basin_id: int):
+    denied = require_admin()
+    if denied:
+        return denied
+    body = await request.get_json(force=True)
+    drained = (body or {}).get("soupDrained")
+    if not isinstance(drained, bool):
+        return jsonify({"detail": "soupDrained 必须是布尔值"}), 400
+    async with SessionLocal() as session:
+        repo = BasinRepo(session)
+        basin = await repo.get(basin_id)
+        if basin is None:
+            return jsonify({"detail": "盆不存在"}), 404
+        await repo.set_soup_drained(basin, drained)
+        basin = await repo.get(basin_id)
+        return _basin_json(basin)
+
+
 @app.route("/api/basins/<int:basin_id>/status", methods=["POST"])
 async def set_status(basin_id: int):
     denied = require_user()
@@ -128,6 +157,10 @@ async def set_status(basin_id: int):
             assert_can_set_status(basin, status)
         except RuleError as exc:
             return jsonify({"detail": str(exc)}), 400
-        await repo.save_status(basin, status)
+        if status == Basin.STATUS_SOAKING and basin.status == Basin.STATUS_REELED:
+            if not await repo.return_to_soaking(basin):
+                return jsonify({"detail": "该盆刚被他人拨回浸茧，请刷新"}), 409
+        else:
+            await repo.save_status(basin, status)
         basin = await repo.get(basin_id)
         return _basin_json(basin)

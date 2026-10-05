@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -42,6 +42,7 @@ class Basin(Base):
     filature_id: Mapped[int] = mapped_column(ForeignKey("filatures.id"))
     code: Mapped[str] = mapped_column(String(40))
     status: Mapped[str] = mapped_column(String(20), default=STATUS_SOAKING)
+    soup_drained: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     ring_index: Mapped[int] = mapped_column(Integer, default=0)
     notes: Mapped[str] = mapped_column(Text, default="")
     filature: Mapped[Filature] = relationship(back_populates="basins")

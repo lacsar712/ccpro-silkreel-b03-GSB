@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -44,6 +44,8 @@ class Basin(Base):
     status: Mapped[str] = mapped_column(String(20), default=STATUS_SOAKING)
     ring_index: Mapped[int] = mapped_column(Integer, default=0)
     notes: Mapped[str] = mapped_column(Text, default="")
+    # 放汤勾：已缫完的盆须管理员在此勾选「汤已放完」，抽屉才允许拨回浸茧
+    bath_drained: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     filature: Mapped[Filature] = relationship(back_populates="basins")
     readings: Mapped[list["BathReading"]] = relationship(back_populates="basin")
 

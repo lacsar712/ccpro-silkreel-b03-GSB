@@ -5,7 +5,14 @@ from app.db import SessionLocal
 from app.models import Basin
 from app.repositories import BasinRepo, UserRepo
 from app.security import make_token, parse_token, verify_password
-from app.services import RuleError, assert_can_set_status, latest_temp
+from app.services import (
+    ConflictError,
+    RuleError,
+    assert_can_return_to_soaking,
+    assert_can_set_status,
+    is_admin,
+    latest_temp,
+)
 
 app = Quart(__name__)
 
@@ -33,6 +40,15 @@ async def load_user():
 def require_user():
     if g.user is None:
         return jsonify({"detail": "未登录"}), 401
+    return None
+
+
+def require_admin():
+    denied = require_user()
+    if denied:
+        return denied
+    if not is_admin(g.user):
+        return jsonify({"detail": "只有管理员能勾放汤勾"}), 403
     return None
 
 
@@ -70,6 +86,7 @@ def _basin_json(basin: Basin) -> dict:
         "code": basin.code,
         "status": basin.status,
         "ringIndex": basin.ring_index,
+        "bathDrained": basin.bath_drained,
         "latestTempC": latest_temp(basin),
         "readingCount": len(basin.readings or []),
     }
@@ -129,5 +146,47 @@ async def set_status(basin_id: int):
         except RuleError as exc:
             return jsonify({"detail": str(exc)}), 400
         await repo.save_status(basin, status)
+        basin = await repo.get(basin_id)
+        return _basin_json(basin)
+
+
+@app.route("/api/basins/<int:basin_id>/drained", methods=["PUT"])
+async def set_drained(basin_id: int):
+    """放汤勾专页：仅管理员可勾/取消。"""
+    denied = require_admin()
+    if denied:
+        return denied
+    body = await request.get_json(force=True)
+    drained = bool((body or {}).get("drained"))
+    async with SessionLocal() as session:
+        repo = BasinRepo(session)
+        async with session.begin():
+            basin = await repo.get_for_update(basin_id)
+            if basin is None:
+                return jsonify({"detail": "盆不存在"}), 404
+            repo.mark_drained(basin, drained)
+        basin = await repo.get(basin_id)
+        return _basin_json(basin)
+
+
+@app.route("/api/basins/<int:basin_id>/return-soaking", methods=["POST"])
+async def return_to_soaking(basin_id: int):
+    """抽屉拨回浸茧：未勾放汤勾必拒；并发抢拨只许一口成。"""
+    denied = require_user()
+    if denied:
+        return denied
+    async with SessionLocal() as session:
+        repo = BasinRepo(session)
+        try:
+            async with session.begin():
+                basin = await repo.get_for_update(basin_id)
+                if basin is None:
+                    return jsonify({"detail": "盆不存在"}), 404
+                assert_can_return_to_soaking(basin)
+                repo.mark_returned_to_soaking(basin)
+        except ConflictError as exc:
+            return jsonify({"detail": str(exc)}), 409
+        except RuleError as exc:
+            return jsonify({"detail": str(exc)}), 400
         basin = await repo.get(basin_id)
         return _basin_json(basin)

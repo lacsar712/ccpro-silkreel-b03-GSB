@@ -36,15 +36,21 @@ async def seed_demo() -> None:
         await session.flush()
         now = utcnow()
         specs = [
-            ("甲-1", Basin.STATUS_REELING, 40.5, 0),
-            ("甲-2", Basin.STATUS_SOAKING, None, 1),
-            ("乙-1", Basin.STATUS_REELED, 39.2, 2),
-            ("乙-2", Basin.STATUS_REELING, 36.0, 3),
-            ("丙-1", Basin.STATUS_SOAKING, None, 4),
-            ("丙-2", Basin.STATUS_REELED, 41.0, 5),
+            ("甲-1", Basin.STATUS_REELING, 40.5, 0, False),
+            ("甲-2", Basin.STATUS_SOAKING, None, 1, False),
+            ("乙-1", Basin.STATUS_REELED, 39.2, 2, False),
+            ("乙-2", Basin.STATUS_REELING, 36.0, 3, False),
+            ("丙-1", Basin.STATUS_SOAKING, None, 4, False),
+            ("丙-2", Basin.STATUS_REELED, 41.0, 5, True),
         ]
-        for code, status, temp, idx in specs:
-            basin = Basin(filature_id=mill.id, code=code, status=status, ring_index=idx)
+        for code, status, temp, idx, drained in specs:
+            basin = Basin(
+                filature_id=mill.id,
+                code=code,
+                status=status,
+                ring_index=idx,
+                bath_drained=drained,
+            )
             session.add(basin)
             await session.flush()
             if temp is not None:
